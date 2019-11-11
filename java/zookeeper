@@ -1,0 +1,89 @@
+### 安装zookeeper(数据存储+观察机制)
+[下载地址](http://mirror.bit.edu.cn/apache/zookeeper/zookeeper-3.4.13/)
+
+#### zookeeper单机版
+1. 下载并解压zookeeper
+2. 修改zoo_sample.cfg 名为 zoo.cfg（其他不需要修改）
+    ```
+    cp zoo_sample.cfg zoo.cfg
+    ```
+3. 启动zookeeper
+    ```
+    ./bin/zkServer.sh start
+    ```
+4. 启动客户端
+    ```
+    zkCli.sh
+    ```
+5. 查看zookeeper运行状态
+```
+./zkServer.sh status
+```
+使用java程序连接zookpeer
+``` java
+public class Demo {
+
+    private static String ip = "49.235.209.207:2181";
+
+    private static int session_timeout = 40000;
+
+    private static CountDownLatch latch = new CountDownLatch(1);
+
+    public static void main(String[] args) throws Exception {
+        ZooKeeper zooKeeper = new ZooKeeper(ip, session_timeout, new Watcher() {
+            @Override
+            public void process(WatchedEvent watchedEvent) {
+                if (watchedEvent.getState() == Event.KeeperState.SyncConnected) {
+                    //确认已经连接完毕后再进行操作
+                    latch.countDown();
+                    System.out.println("已经获得了连接");
+                }
+            }
+        });
+
+        //连接完成之前先等待
+        latch.await();
+        ZooKeeper.States states = zooKeeper.getState();
+        System.out.println(states);
+    }
+}
+```
+5. 监听配置（数据）
+```
+public class ZookeeperProSync implements Watcher {
+
+    private static CountDownLatch countDownLatch = new CountDownLatch(1);
+    private static ZooKeeper zk = null;
+    private static Stat stat = new Stat();
+
+    public static void main(String[] args) throws IOException, InterruptedException, KeeperException {
+        String path = "/username";
+        // 连接注册一个默认的监听器
+        zk = new ZooKeeper("49.235.209.207:2181", 5000, new ZookeeperProSync());
+        // 等待zk成功的返回
+        countDownLatch.await();
+
+        System.out.println(new String(zk.getData(path, true, stat)));
+
+        Thread.sleep(Integer.MAX_VALUE);
+    }
+
+    @Override
+    public void process(WatchedEvent event) {
+        if(Event.KeeperState.SyncConnected == event.getState()){ //zk成功通知事件 {
+            if(Event.EventType.None == event.getType() && null == event.getPath()){
+                countDownLatch.countDown();
+            }else if(event.getType() == Event.EventType.NodeDataChanged){
+                try {
+                    System.out.println("新值已修改，新值为" + new String(zk.getData(event.getPath(), true, stat)));
+                } catch (KeeperException e) {
+                    e.printStackTrace();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+}
+```
+### zookeeper分布式版
